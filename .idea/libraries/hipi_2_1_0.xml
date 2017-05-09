@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="hipi-2.1.0">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/hipi-2.1.0.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
