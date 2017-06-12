@@ -1,6 +1,6 @@
 package main.java;
 
-import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.hipi.image.FloatImage;
 import org.hipi.image.HipiImageHeader;
@@ -10,11 +10,20 @@ import java.io.IOException;
 /**
  * Created by florinoprea93 on 08.05.2017.
  */
-public class Map extends Mapper<HipiImageHeader, FloatImage, IntWritable, FloatImage> {
+public class Map extends Mapper<HipiImageHeader, FloatImage, Text, FloatImage> {
+
+    private static final int FILTER_WIDTTH = 3;
+    private static final int FILTER_HEIGHT = 3;
+    private static final float MAX_PIXELS = 255.0f;
+
+
+    private static  final double SIMPLE_EDGE_DETECTOR_FILTER[][] = {{-1.0f, -1.0f, -1.0f}, {-1.0f, 8.0f, -1.0f}, {-1.0f, -1.0f, -1.0f}};
+    private static final double FACTOR = 1.0f;
+    private static final double BIAS = 0.0f;
+
+
     public void map(HipiImageHeader key, FloatImage value, Context context) throws IOException, InterruptedException {
 
-
-        //TODO verify that image was properly decoded, is of sufficient size, and has the three color channels(RGB)
 
         if (value != null && value.getWidth() > 1 && value.getHeight() > 1 && value.getNumBands() == 3) {
             //TODO get dimensions of image
@@ -23,27 +32,36 @@ public class Map extends Mapper<HipiImageHeader, FloatImage, IntWritable, FloatI
 
             //TODO get pointer to image data
             float[] valData = value.getData();
+            float[] result = new float[valData.length];
 
-            //TODO initialize 3 element array to hold RGB pixel average
-            float[] avgData = {0, 0, 0};
+            for (int i = 0; i < w; i++) {
+                for (int j = 0; j < h; j++) {
+                    double R = 0.0f;
+                    double G = 0.0f;
+                    double B = 0.0f;
 
-            //TODO Traverse image pixel data in raster-scan order and update running average
-            for(int j=0;j<h; j++) {
-                for(int i=0; i<w; i++) {
-                    avgData[0] += valData[(j*w+i)*3+0]; //TODO R
-                    avgData[1] += valData[(j*w+i)*3+1]; //TODO G
-                    avgData[2] += valData[(j*w+i)*3+2]; //TODO B
+                    for (int fJ = 0; fJ < FILTER_HEIGHT; fJ++) {
+                        for (int fI = 0; fI < FILTER_WIDTTH; fI++) {
+
+                            int imageI = (i - FILTER_WIDTTH / 2 + fI + w) % w;
+                            int imageJ = (j - FILTER_HEIGHT / 2 + fJ + h) % h;
+
+                            R += valData[(imageJ * w + imageI) * 3] * SIMPLE_EDGE_DETECTOR_FILTER[fJ][fI] * MAX_PIXELS;
+                            G += valData[(imageJ * w + imageI) * 3 + 1] * SIMPLE_EDGE_DETECTOR_FILTER[fJ][fI] * MAX_PIXELS;
+                            B += valData[(imageJ * w + imageI) * 3 + 2] * SIMPLE_EDGE_DETECTOR_FILTER[fJ][fI] * MAX_PIXELS;
+                        }
+                    }
+                    result[(j * w + i) * 3] = Math.min(Math.max((float) (FACTOR * R + BIAS), 0.0f), MAX_PIXELS) / MAX_PIXELS;
+                    result[(j * w + i) * 3 + 1] = Math.min(Math.max((float) (FACTOR * G + BIAS), 0.0f), MAX_PIXELS) / MAX_PIXELS;
+                    result[(j * w + i) * 3 + 2] = Math.min(Math.max((float) (FACTOR * B + BIAS), 0.0f), MAX_PIXELS) / MAX_PIXELS;
                 }
             }
 
-            //TODO Create a FloatImage to store average value
-            FloatImage avg = new FloatImage(1, 1, 3, avgData);
-
-            //TODO divide by number of pixels in image
-            avg.scale(1.0f/(float) (w*h));
+            FloatImage floatImage = new FloatImage(w, h, value.getNumBands(), result);
+            String filename = key.getAllMetaData().get("filename");
 
             //TODO emit record to reducer
-            context.write(new IntWritable(1), avg);
+            context.write(new Text(filename), floatImage);
         }
     }
 }
